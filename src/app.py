@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
+import json
 from pathlib import Path
 
 app = FastAPI(title="Mergington High School API",
@@ -18,6 +19,12 @@ app = FastAPI(title="Mergington High School API",
 current_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
+
+# Load teacher credentials
+teachers_file = os.path.join(Path(__file__).parent, "teachers.json")
+with open(teachers_file, "r") as f:
+    teachers_data = json.load(f)
+    VALID_TEACHERS = {teacher["username"]: teacher["password"] for teacher in teachers_data["teachers"]}
 
 # In-memory activity database
 activities = {
@@ -88,9 +95,29 @@ def get_activities():
     return activities
 
 
+@app.post("/login")
+def login(username: str, password: str):
+    """Authenticate a teacher"""
+    # Validate credentials
+    if username not in VALID_TEACHERS or VALID_TEACHERS[username] != password:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password"
+        )
+    
+    return {"message": "Login successful", "username": username}
+
+
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
-    """Sign up a student for an activity"""
+def signup_for_activity(activity_name: str, email: str, username: str = None):
+    """Sign up a student for an activity (admin only)"""
+    # Validate authentication - only logged in teachers can signup
+    if not username:
+        raise HTTPException(
+            status_code=403,
+            detail="Authentication required. Only teachers can register students."
+        )
+    
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
@@ -111,8 +138,15 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
-    """Unregister a student from an activity"""
+def unregister_from_activity(activity_name: str, email: str, username: str = None):
+    """Unregister a student from an activity (admin only)"""
+    # Validate authentication - only logged in teachers can unregister
+    if not username:
+        raise HTTPException(
+            status_code=403,
+            detail="Authentication required. Only teachers can unregister students."
+        )
+    
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
